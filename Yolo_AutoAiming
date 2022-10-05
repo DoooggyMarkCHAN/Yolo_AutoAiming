@@ -1,0 +1,86 @@
+import torch
+from matplotlib import pyplot as plt
+import numpy as np
+import cv2
+from mss import mss
+from PIL import Image
+import pandas as pd
+import mouse
+import keyboard
+import win32api, win32con
+import math
+
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s',classes=0)
+model.cuda()
+model.classes=[0]
+
+x_screen=2560
+y_screen=1440
+x_window = int(x_screen/8)
+y_window = int(y_screen/4)
+MoveFactor = 1.0
+AimFactor =0.80
+
+
+d_left = int(x_screen/2-x_window/2)
+d_top = int(y_screen/2-y_window/2)
+mon = {'left':d_left , 'top':d_top , 'width': x_window, 'height': y_window}
+
+with mss() as sct:
+    while True:
+        d_xc=5000
+        d_yc=5000
+        d_2c=5000
+        screenShot = sct.grab(mon)
+
+        img = Image.frombytes(
+            'RGB', 
+            (screenShot.width, screenShot.height), 
+            screenShot.rgb, 
+        )
+        
+        # Make detections 
+        results = model(img)
+        #cv2.imshow('test', np.array(img))
+        
+        #cv2.imshow('YOLO',cv2.cvtColor( np.squeeze(results.render()),cv2.COLOR_BGR2RGB))
+        mypd = results.pandas().xyxy[0]
+        n_object = int(results.pandas().xyxy[0].size/7)
+        #print('\n', results.pandas().xyxy[0])
+        
+        for i in range(n_object):
+            try:
+                d_xmin = mypd.at[0,"xmin"]+int(x_screen/2-x_window/2)
+                d_ymin = mypd.at[0,"ymin"]+int(y_screen/2-y_window/2)
+                d_xmax = mypd.at[0,"xmax"]+int(x_screen/2-x_window/2)
+                d_ymax = mypd.at[0,"ymax"]+int(y_screen/2-y_window/2)
+            except:
+                d_xmin = 0
+                d_ymin = 0
+                d_xmax = 0
+                d_ymax = 0
+            d_xc_temp=int((d_xmin+d_xmax)/2-x_screen/2)
+            d_yc_temp=int((d_ymin*AimFactor+d_ymax*(1-AimFactor))-y_screen/2)
+            d_2c_temp=math.sqrt(d_xc_temp*d_xc_temp+d_yc_temp*d_yc_temp)
+            if d_2c_temp <= d_2c:
+                d_xc = d_xc_temp
+                d_yc = d_yc_temp
+                d_2c = d_2c_temp
+        
+        if d_xc == 5000:
+            d_xc = 0
+        if d_yc == 5000:
+            d_yc=0
+
+        #print(d_xc,end=" "),print(d_yc,end=" "),
+        #print(" ")
+       # print(mouse.get_position())
+        
+        #print('\n', results.pandas().xyxy[0].get_value(0,'xmin'))
+        if (d_xc!=0 and d_yc!=0 and keyboard.is_pressed('shift')):
+            #mouse.move(-20, -20, absolute=False, duration=0)
+            win32api.mouse_event(win32con.MOUSEEVENTF_MOVE,int(d_xc*MoveFactor),int(d_yc*MoveFactor),0,0)
+            print("Move")
+
+        if cv2.waitKey(33) & 0xFF in (ord('q'), 27,):
+            break
